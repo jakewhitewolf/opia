@@ -1,309 +1,255 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 #include <locale.h>
 
 #define FILENAME "digital_books.txt"
-#define MAX_LINE_LENGTH 300 // для хранения строки книги
+#define MAX_LINE_LENGTH 300
 
-// Структура книги
 typedef struct {
     char title[100];
     char author[100];
     char genre[50];
     int year;
+    float rating;
 } Book;
 
-// Основные функции
-Book input_book();
-void print_book(const Book *book);
-int save_to_file(const char *book_str);
-char* write_book(const Book *book);
-char* read_book(FILE *file);
-int match_query(const Book *book, const char *query);
-int delete_book_by_title(const char *title);
-Book* find_books_by_author(const char *author, int *count);
+// Работа с файлами
+Book* load_from_file();
+int save_to_file(Book *books, int count);
 
-// Функции меню
-void add_book();
-void book_list();
-void find_book();
-void delete_book();
-void search_by_author();
+// Формирование строки для вывода
+char* output_book(const Book* book);
+
+// Добавление книги
+int input_book(Book *book);
+Book* add_book(Book* books, int* count, Book new_book);
+
+// Вывод списка книг
+char* get_book_list(Book* books, int count);
+
+// Поиск книги по названию или автору
+Book* search_books(Book* books, int count, const char* input, int* found);
+
+// Удаление книги
+int delete_book(Book* books, int* count, const char* title);
 
 int main() {
     setlocale(LC_ALL, "RUS");
+    int count = 0;
+    Book* library = load_from_file(&count);
     int choice;
+    char input[100];
     while (1) {
         printf("\nМеню:\n");
         printf("1. Добавить книгу\n");
         printf("2. Просмотр всех книг\n");
-        printf("3. Поиск книги по названию\n");
-        printf("4. Поиск книг по автору\n");
-        printf("5. Удалить книгу\n");
+        printf("3. Поиск книги по названию или автору\n");
+        printf("4. Удалить книгу\n");
+        printf("5. Сохранить изменения\n");
         printf("6. Выход\n");
         printf("Выбор: ");
         scanf("%d", &choice);
-        getchar(); // удалить \n после scanf
+        getchar();
 
         switch (choice) {
-            case 1:
-                add_book();
+            case 1: {
+                Book new_book;
+                if (input_book(&new_book)) {
+                    library = add_book(library, &count, new_book);
+                    printf("Книга успешно добавлена\n");
+                } else {
+                    printf("Ошибка при добавлении книги\n");
+                }
                 break;
-
-            case 2:
-                book_list();
+            }
+            case 2: {
+                char* list = get_book_list(library, count);
+                printf("Список книг:\n");
+                printf("%s", list);
+                free(list);
                 break;
-
-            case 3:
-                find_book();
+            }
+            case 3: {
+                printf("Введите запрос: ");
+                fgets(input, sizeof(input), stdin); 
+                strtok(input, "\n");
+                int found = 0;
+                Book* result = search_books(library, count, input, &found);
+                if (found == 0) printf("Ничего не найдено\n");
+                else {
+                    printf("Найденные книги:\n");
+                    for (int i = 0; i < found; i++) {
+                        char* book_output = output_book(&result[i]);               
+                        printf("%s", book_output);
+                        free(book_output);
+                    }
+                }
+                free(result);
                 break;
-
-            case 4:
-                search_by_author();
+            }
+            case 4: {
+                printf("Введите название книги для удаления: ");
+                fgets(input, sizeof(input), stdin); 
+                strtok(input, "\n");
+                if (delete_book(library, &count, input))
+                    printf("Книга удалена\n");
+                else
+                    printf("Книга не найдена\n");
                 break;
-
-            case 5:
-                delete_book();
+            }
+            case 5: {
+                if (save_to_file(library, count))
+                    printf("Файл успешно сохранён\n");
+                else
+                    printf("Ошибка при сохранении файла\n");
                 break;
-
-            case 6:
+            }
+            case 6: {
+                free(library);
                 return 0;
-
-            default:
-                printf("Неверный выбор. Попробуйте снова.\n");
+            }   
         }
     }
 }
 
-// ввод данных книги
-Book input_book() {
-    Book book;
-
-    printf("Введите название книги: ");
-    fgets(book.title, sizeof(book.title), stdin);
-    strtok(book.title, "\n");
-
-    printf("Введите автора: ");
-    fgets(book.author, sizeof(book.author), stdin);
-    strtok(book.author, "\n");
-
-    printf("Введите жанр: ");
-    fgets(book.genre, sizeof(book.genre), stdin);
-    strtok(book.genre, "\n");
-
-    printf("Введите год издания: ");
-    scanf("%d", &book.year);
-    getchar();
-
-    return book;
-}
-
-// печать книги 
-void print_book(const Book *book) {
-    printf("%s - %s (%d) [%s]\n", book->title, book->author, book->year, book->genre);
-}
-
-// сохранение строки в файл
-int save_to_file(const char *book_str) {
-    FILE *file = fopen(FILENAME, "a");
-    if (!file) return 0;
-    fprintf(file, "%s\n", book_str);
-    fclose(file);
-    return 1;
-}
-
-// формирование строки для записи в файл
-char* write_book(const Book *book) {
-    char *book_str = malloc(MAX_LINE_LENGTH);
-    snprintf(book_str, MAX_LINE_LENGTH, "%s;%s;%d;%s", 
-             book->title, book->author, book->year, book->genre);
-    return book_str;
-}
-
-// чтение строки из файла
-char* read_book(FILE *file) {
-    char *line = malloc(MAX_LINE_LENGTH);
-    if (!fgets(line, MAX_LINE_LENGTH, file)) {
-        free(line);
-        return NULL;
-    }
-    line[strcspn(line, "\n")] = '\0'; // Удаляем \n
-    return line;
-}
-
-// сравнение книги с запросом
-int match_query(const Book *book, const char *query) {
-    return strstr(book->title, query) || strstr(book->author, query);
-}
-
-// удаление книги по названию
-int delete_book_by_title(const char *title) {
-    FILE *file = fopen(FILENAME, "r");
-    if (!file) return 0;
-
-    FILE *temp = fopen("temp.txt", "w");
-    if (!temp) {
-        fclose(file);
-        return 0;
-    }
-
-    char *line;
-    int deleted = 0;
-
-    while ((line = read_book(file)) != NULL) {
-        Book book;
-        sscanf(line, "%[^;];%[^;];%d;%[^\n]", 
-               book.title, book.author, &book.year, book.genre);
-        
-        if (strcmp(book.title, title) != 0) {
-            fprintf(temp, "%s\n", line);
-        } else {
-            deleted = 1;
-        }
-        free(line);
-    }
-
-    fclose(file);
-    fclose(temp);
-
-    remove(FILENAME);
-    rename("temp.txt", FILENAME);
-    return deleted;
-}
-
-// поиск книг по автору
-Book* find_books_by_author(const char *author, int *count) {
+// Загрузка из файла
+Book* load_from_file(int *count) {
     FILE *file = fopen(FILENAME, "r");
     if (!file) {
         *count = 0;
         return NULL;
     }
 
-    Book *results = malloc(sizeof(Book) * 100);
-    int found = 0;
-    char *line;
+    Book* books = NULL;
+    *count = 0;
+    
+    char line[MAX_LINE_LENGTH];
 
-    while ((line = read_book(file)) != NULL) {
-        Book book;
-        sscanf(line, "%[^;];%[^;];%d;%[^\n]", 
-               book.title, book.author, &book.year, book.genre);
-        
-        if (strcmp(book.author, author) == 0) {
-            results[found++] = book;
-        }
-        free(line);
+    while (fgets(line, sizeof(line), file)) {
+        books = realloc(books, (*count + 1) * sizeof(Book));
+        sscanf(line, "%99[^;];%99[^;];%d;%49[^;];%f", books[*count].title, books[*count].author, &books[*count].year, books[*count].genre, &books[*count].rating);
+        (*count)++;
     }
 
     fclose(file);
-    *count = found;
+    return books;
+}
+
+// Сохранение в файл
+int save_to_file(Book *books, int count) {
+    FILE *file = fopen(FILENAME, "w");
+    if (!file) {
+        printf("Ошибка открытия файла для сохранения.\n");
+        return 0;
+    }
+
+    for (int i = 0; i < count; i++) {
+        fprintf(file, "%s;%s;%d;%s;%.1f\n", books[i].title, books[i].author, books[i].year, books[i].genre, books[i].rating);
+    }
+
+    fclose(file);
+    return 1;
+}
+
+// Ввод данных книги для добавления
+int input_book(Book *book) {
+    printf("Введите название: ");
+    if (!fgets(book->title, sizeof(book->title), stdin)) {
+        return 0;
+    }
+    strtok(book->title, "\n");
+
+    // Ввод автора
+    printf("Введите автора: ");
+    if (!fgets(book->author, sizeof(book->author), stdin)) {
+        return 0;
+    }
+    strtok(book->author, "\n");
+
+    printf("Введите жанр: ");
+    if (!fgets(book->genre, sizeof(book->genre), stdin)) {
+        return 0;
+    }
+    strtok(book->genre, "\n");
+
+    printf("Введите год: ");
+    if (scanf("%d", &book->year) != 1) {
+        return 0;
+    }
+    getchar();
+
+    printf("Введите рейтинг (0,0 - 5,0): ");
+    if (scanf("%f", &book->rating) != 1) {
+        return 0;
+    }
+    getchar();
+
+    return 1;   
+}
+
+// Добавление книги
+Book* add_book(Book* books, int* count, Book new_book) {
+    books = realloc(books, (*count + 1) * sizeof(Book));
+    books[*count] = new_book;
+    (*count)++;
+    return books;
+}
+
+// Формирование строки для вывода
+char* output_book(const Book* book) {
+    char* output = malloc(MAX_LINE_LENGTH);
+
+    if (output != NULL) {
+        snprintf(output, MAX_LINE_LENGTH, "%s - %s (%d) [%s] Рейтинг: %.1f\n", book->title, book->author, book->year, book->genre, book->rating);
+    }
+
+    return output;
+}
+
+// Возвращение списка книг
+char* get_book_list(Book* books, int count) {
+    char *list = malloc(count * MAX_LINE_LENGTH);
+    list[0] = '\0';
+
+    for (int i = 0; i < count; i++) {
+        char* book_output = output_book(&books[i]);
+        strcat(list, book_output);
+        free(book_output);
+    }
+
+    return list;
+}
+
+// Поиск книг по названию или автору
+Book* search_books(Book* books, int count, const char* input, int* found) {
+    Book* results = NULL;
+    *found = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (strstr(books[i].title, input) || strstr(books[i].author, input)) {
+            results = realloc(results, (*found + 1) * sizeof(Book));
+            results[*found] = books[i];
+            (*found)++;
+        }
+    }
+
     return results;
 }
 
-// добавление книги
-void add_book() {
-    Book book = input_book();
-    printf("\nВы ввели:\n");
-    print_book(&book);
-    
-    char *book_str = write_book(&book);
-    if (save_to_file(book_str)) {
-        printf("Книга добавлена успешно.\n");
-    } else {
-        printf("Ошибка сохранения книги.\n");
-    }
-    free(book_str);
-}
+// Удаление книги
+int delete_book(Book* books, int* count, const char* title) {
+    for (int i = 0; i < *count; i++) {
 
-// вывод списка книг
-void book_list() {
-    FILE *file = fopen(FILENAME, "r");
-    if (!file) {
-        printf("Файл не найден.\n");
-        return;
-    }
+        if (strcmp(books[i].title, title) == 0) {
 
-    char *line;
-    printf("\nСписок книг:\n");
-    
-    while ((line = read_book(file)) != NULL) {
-        Book book;
-        sscanf(line, "%[^;];%[^;];%d;%[^\n]", 
-               book.title, book.author, &book.year, book.genre);
-        print_book(&book);
-        free(line);
-    }
+            for (int j = i; j < *count - 1; j++) {
+                books[j] = books[j + 1];
+            }
 
-    fclose(file);
-}
-
-// поиск книги
-void find_book() {
-    char query[100];
-    printf("Введите строку для поиска (название или автор): ");
-    fgets(query, sizeof(query), stdin);
-    strtok(query, "\n");
-
-    FILE *file = fopen(FILENAME, "r");
-    if (!file) {
-        printf("Файл не найден.\n");
-        return;
-    }
-
-    char *line;
-    int found = 0;
-    
-    while ((line = read_book(file)) != NULL) {
-        Book book;
-        sscanf(line, "%[^;];%[^;];%d;%[^\n]", 
-               book.title, book.author, &book.year, book.genre);
-        
-        if (match_query(&book, query)) {
-            print_book(&book);
-            found = 1;
-        }
-        free(line);
-    }
-
-    fclose(file);
-    if (!found) {
-        printf("Ничего не найдено по запросу.\n");
-    }
-}
-
-// удаление книги
-void delete_book() {
-    char title[100];
-    printf("Введите название книги для удаления: ");
-    fgets(title, sizeof(title), stdin);
-    strtok(title, "\n");
-
-    if (delete_book_by_title(title)) {
-        printf("Книга удалена.\n");
-    } else {
-        printf("Книга не найдена.\n");
-    }
-}
-
-// поиск по автору
-void search_by_author() {
-    char author[100];
-    printf("Введите имя автора: ");
-    fgets(author, sizeof(author), stdin);
-    strtok(author, "\n");
-
-    int count = 0;
-    Book *books = find_books_by_author(author, &count);
-
-    if (count == 0) {
-        printf("Книг автора \"%s\" не найдено.\n", author);
-    } else {
-        printf("Найдено %d книг:\n", count);
-        for (int i = 0; i < count; i++) {
-            print_book(&books[i]);
+            (*count)--;
+            return 1;
         }
     }
-
-    free(books);
+    return 0;
 }
